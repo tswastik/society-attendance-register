@@ -68,7 +68,6 @@ async function setupPush(staffId) {
 
     const reg = await navigator.serviceWorker.register('/staff/firebase-messaging-sw.js');
     await navigator.serviceWorker.ready;
-    reg.active && reg.active.postMessage({ type: 'INIT_FIREBASE', config: config.firebase });
 
     if (!window.firebase) {
       return { ok: false, reason: 'Firebase SDK script did not load on this page.' };

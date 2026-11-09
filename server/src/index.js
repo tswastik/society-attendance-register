@@ -33,6 +33,45 @@ app.get('/api/public-config', (req, res) => {
   });
 });
 
+// Served dynamically (not as a static file) because it needs the real Firebase config baked in
+// directly — a service worker can be killed and restarted by the browser at any time with no page
+// around to hand it config via postMessage, so it must be self-sufficient from the first line.
+// These Firebase web values are public by design (same ones /api/public-config already exposes),
+// not secrets, so embedding them in a JS file served to the client is fine.
+app.get('/staff/firebase-messaging-sw.js', (req, res) => {
+  res.type('application/javascript');
+  res.send(`
+importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js');
+
+firebase.initializeApp(${JSON.stringify({
+  apiKey: config.firebase.apiKey,
+  projectId: config.firebase.projectId,
+  messagingSenderId: config.firebase.messagingSenderId,
+  appId: config.firebase.appId,
+})});
+
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', () => self.clients.claim());
+
+const messaging = firebase.messaging();
+messaging.onBackgroundMessage((payload) => {
+  const { title, body } = payload.notification || {};
+  self.registration.showNotification(title || 'Attendance reminder', {
+    body: body || '',
+    icon: '/staff/icon.svg',
+    data: payload.data || {},
+  });
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const link = (event.notification.data && event.notification.data.link) || '/staff/index.html';
+  event.waitUntil(self.clients.openWindow(link));
+});
+`.trim());
+});
+
 app.use('/staff', express.static(path.join(__dirname, '..', '..', 'public', 'staff')));
 app.use('/admin', express.static(path.join(__dirname, '..', '..', 'public', 'admin')));
 
