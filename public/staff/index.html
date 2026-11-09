@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Society Attendance</title>
+<link rel="manifest" href="/staff/manifest.json">
+<link rel="stylesheet" href="/staff/styles.css">
+</head>
+<body>
+<main>
+  <div class="card" id="homeCard">
+    <h1>Society Attendance</h1>
+    <p class="muted">Loading your status…</p>
+  </div>
+</main>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
+<script src="/staff/app.js"></script>
+<script>
+  async function render() {
+    const card = document.getElementById('homeCard');
+
+    if (!Store.isRegistered()) {
+      card.innerHTML = `
+        <h1>Welcome</h1>
+        <p class="muted">You haven't registered yet.</p>
+        <button onclick="window.location.href='/staff/register.html'">Register</button>`;
+      return;
+    }
+
+    setupPush(Store.staffId);
+
+    try {
+      const info = await api(`/staff/${Store.staffId}`);
+      const badge = info.isCheckedIn ? 'in' : 'out';
+      const label = info.isCheckedIn ? 'CHECKED IN' : 'CHECKED OUT';
+      const lastEvent = info.lastEvent
+        ? `Last event: ${info.lastEvent.type} at ${new Date(info.lastEvent.timestamp).toLocaleString()}`
+        : 'No gate scans yet.';
+
+      card.innerHTML = `
+        <h1>Hi, ${info.name}</h1>
+        <p class="muted">${info.category}</p>
+        <div class="status ${info.isCheckedIn ? 'ok' : 'pending'}">
+          <span class="badge ${badge}">${label}</span>
+          <div style="margin-top:8px; font-weight:400; font-size:0.85rem">${lastEvent}</div>
+        </div>
+        <p class="muted" style="margin-top:16px">Scan the QR code at the gate to check in or out.</p>
+        <button class="secondary" onclick="window.location.href='/staff/register.html'">Register a different person on this phone</button>`;
+    } catch (err) {
+      card.innerHTML = `<div class="status err">${err.message}</div>`;
+    }
+  }
+
+  render();
+</script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "name": "society-attendance-server",
+  "version": "1.0.0",
+  "description": "QR + geofence based check-in/check-out system backed by Google Sheets, with FCM push reminders.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "generate-qr": "node scripts/generate-qr.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "firebase-admin": "^12.3.1",
+    "googleapis": "^140.0.1",
+    "node-cron": "^3.0.3",
+    "qrcode": "^1.5.4",
+    "uuid": "^9.0.1"
+  }
+}

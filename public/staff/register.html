@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Register — Society Attendance</title>
+<link rel="manifest" href="/staff/manifest.json">
+<link rel="stylesheet" href="/staff/styles.css">
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>Welcome</h1>
+    <p class="muted">Register once. Your phone will remember you for future gate scans.</p>
+
+    <form id="registerForm">
+      <label for="name">Full name</label>
+      <input id="name" type="text" required autocomplete="name" />
+
+      <label for="category">Role</label>
+      <select id="category" required>
+        <option value="" disabled selected>Select your role</option>
+      </select>
+
+      <label for="phone">Phone (optional)</label>
+      <input id="phone" type="tel" autocomplete="tel" />
+
+      <button type="submit">Register</button>
+    </form>
+
+    <div id="statusBox"></div>
+  </div>
+</main>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
+<script src="/staff/app.js"></script>
+<script>
+  async function loadCategories() {
+    try {
+      const { categories } = await api('/staff/categories');
+      const select = document.getElementById('category');
+      categories.forEach((c) => {
+        const opt = document.createElement('option');
+        opt.value = c; opt.textContent = c;
+        select.appendChild(opt);
+      });
+    } catch (err) {
+      document.getElementById('statusBox').innerHTML =
+        `<div class="status err">Could not load roles: ${err.message}</div>`;
+    }
+  }
+
+  function redirectAfterRegister() {
+    const gate = qs('gate') || 'main';
+    window.location.href = `/staff/checkin.html?gate=${encodeURIComponent(gate)}`;
+  }
+
+  if (Store.isRegistered()) {
+    redirectAfterRegister();
+  }
+
+  loadCategories();
+
+  document.getElementById('registerForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const statusBox = document.getElementById('statusBox');
+    statusBox.innerHTML = '<div class="status pending">Registering…</div>';
+
+    const name = document.getElementById('name').value;
+    const category = document.getElementById('category').value;
+    const phone = document.getElementById('phone').value;
+
+    try {
+      const result = await api('/staff/register', {
+        method: 'POST',
+        body: JSON.stringify({ name, category, phone }),
+      });
+      Store.save(result);
+      setupPush(result.staffId);
+      statusBox.innerHTML = '<div class="status ok">Registered! Redirecting…</div>';
+      setTimeout(redirectAfterRegister, 600);
+    } catch (err) {
+      statusBox.innerHTML = `<div class="status err">${err.message}</div>`;
+    }
+  });
+</script>
+</body>
+</html>

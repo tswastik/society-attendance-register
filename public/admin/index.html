@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Dashboard — Society Attendance</title>
+<link rel="stylesheet" href="/admin/styles.css">
+</head>
+<body>
+
+<div class="card" id="loginCard">
+  <h1>Admin Login</h1>
+  <form id="loginForm">
+    <input id="password" type="password" placeholder="Admin password" required style="width:100%" />
+    <button type="submit" style="margin-top:10px; width:100%">Enter</button>
+  </form>
+  <p class="err" id="loginErr"></p>
+</div>
+
+<div id="dashboard" style="display:none">
+  <h1>Society Attendance Dashboard</h1>
+
+  <div class="card">
+    <div class="toolbar">
+      <h2 style="margin:0; flex:2">Today's Roster</h2>
+      <button id="refreshBtn">Refresh</button>
+    </div>
+    <div id="rosterBox"><p class="muted">Loading…</p></div>
+  </div>
+
+  <div class="card">
+    <h2>Attendance Log</h2>
+    <div class="toolbar">
+      <input id="dateFilter" type="date" />
+      <select id="categoryFilter">
+        <option value="">All roles</option>
+        <option value="House Keeping">House Keeping</option>
+        <option value="Security Guard">Security Guard</option>
+        <option value="Society Manager">Society Manager</option>
+        <option value="Others">Others</option>
+      </select>
+    </div>
+    <div id="logsBox"><p class="muted">Loading…</p></div>
+  </div>
+</div>
+
+<script src="/admin/admin.js"></script>
+</body>
+</html>

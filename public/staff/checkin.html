@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Gate Check-in — Society Attendance</title>
+<link rel="manifest" href="/staff/manifest.json">
+<link rel="stylesheet" href="/staff/styles.css">
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1 id="greeting">Hello</h1>
+    <p class="muted">Checking your location at the gate…</p>
+    <div id="statusBox"><div class="status pending">Getting your location…</div></div>
+    <button id="retryBtn" class="secondary" style="display:none">Try again</button>
+  </div>
+  <p class="muted" style="text-align:center">
+    Not you? <a href="/staff/register.html">Register as someone else</a>
+  </p>
+</main>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
+<script src="/staff/app.js"></script>
+<script>
+  const gate = qs('gate') || 'main';
+
+  if (!Store.isRegistered()) {
+    window.location.href = `/staff/register.html?gate=${encodeURIComponent(gate)}`;
+  } else {
+    document.getElementById('greeting').textContent = `Hi, ${Store.name}`;
+    setupPush(Store.staffId);
+    runScan();
+  }
+
+  async function runScan() {
+    const statusBox = document.getElementById('statusBox');
+    const retryBtn = document.getElementById('retryBtn');
+    retryBtn.style.display = 'none';
+    statusBox.innerHTML = '<div class="status pending">Getting your location…</div>';
+
+    try {
+      const { lat, lng } = await getLocation();
+      statusBox.innerHTML = '<div class="status pending">Recording your attendance…</div>';
+
+      const result = await api('/attendance/scan', {
+        method: 'POST',
+        body: JSON.stringify({ staffId: Store.staffId, gateId: gate, lat, lng }),
+      });
+
+      const badge = result.type === 'CheckIn' ? 'in' : 'out';
+      statusBox.innerHTML = `
+        <div class="status ok">
+          ${result.message}
+          <div><span class="badge ${badge}">${result.type === 'CheckIn' ? 'CHECKED IN' : 'CHECKED OUT'}</span></div>
+        </div>`;
+    } catch (err) {
+      statusBox.innerHTML = `<div class="status err">${err.message}</div>`;
+      retryBtn.style.display = 'block';
+    }
+  }
+
+  document.getElementById('retryBtn').addEventListener('click', runScan);
+</script>
+</body>
+</html>
