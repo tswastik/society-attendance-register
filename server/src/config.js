@@ -30,6 +30,7 @@ module.exports = {
   },
 
   adminPassword: process.env.ADMIN_PASSWORD || 'change-me',
+  jobsSecret: process.env.JOBS_SECRET || '',
 
   shiftReminderHours: parseFloat(process.env.SHIFT_REMINDER_HOURS || '8'),
   nightCutoffHour: parseInt(process.env.NIGHT_CUTOFF_HOUR || '22', 10),

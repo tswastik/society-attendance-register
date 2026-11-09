@@ -8,6 +8,7 @@ const reminders = require('./jobs/reminders');
 const staffRoutes = require('./routes/staff');
 const attendanceRoutes = require('./routes/attendance');
 const dashboardRoutes = require('./routes/dashboard');
+const jobsRoutes = require('./routes/jobs');
 
 const app = express();
 app.use(cors());
@@ -16,6 +17,7 @@ app.use(express.json());
 app.use('/api/staff', staffRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/jobs', jobsRoutes);
 
 // Expose a few non-secret config values the frontend needs (gate id, Firebase web config).
 app.get('/api/public-config', (req, res) => {

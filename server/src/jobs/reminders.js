@@ -10,6 +10,10 @@ function isSnoozed(note) {
   return !Number.isNaN(until) && until > Date.now();
 }
 
+function todayStr() {
+  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
 async function getOpenSessions() {
   const [staff, logs] = await Promise.all([sheets.getAllStaff(), sheets.getAllLogs()]);
   const byStaff = new Map(staff.map((s) => [s.StaffId, s]));
@@ -55,32 +59,45 @@ async function run8HourSweep() {
   }
 }
 
-// Daily at NIGHT_CUTOFF_HOUR (default 22:00): nag everyone still checked in.
+// Nags everyone still checked in once the night cutoff hour has arrived, once per day.
+// Safe to call as often as you like (e.g. every 15 min from an external pinger) — it
+// only actually sends during the cutoff hour, and only once per staff member per day,
+// tracked via a dated flag in the log's Note.
 async function runNightSweep() {
+  if (new Date().getHours() < config.nightCutoffHour) return;
+
+  const flag = `NIGHT:${todayStr()}`;
   const open = await getOpenSessions();
   for (const { staff, log } of open) {
+    if (log.Note === flag) continue; // already sent tonight
+
     await push.sendPush(
       staff.FcmToken,
       "It's checkout time",
       `Hi ${staff.Name}, it's past ${config.nightCutoffHour}:00 and you're still checked in. Please check out, or let us know if you're still working.`,
       { link: '/staff/checkin.html', staffId: staff.StaffId }
     );
-    await sheets.setLogNote(log.LogId, `OverdueAt${config.nightCutoffHour}:00`);
+    await sheets.setLogNote(log.LogId, flag);
   }
 }
 
-function start() {
-  // Every 15 minutes.
-  cron.schedule('*/15 * * * *', () => {
-    run8HourSweep().catch((err) => console.error('[jobs] 8h sweep failed:', err));
-  });
-
-  // Daily at the configured night cutoff hour, minute 0.
-  cron.schedule(`0 ${config.nightCutoffHour} * * *`, () => {
-    runNightSweep().catch((err) => console.error('[jobs] night sweep failed:', err));
-  });
-
-  console.log(`[jobs] Reminder jobs scheduled: 8h sweep every 15 min, night sweep daily at ${config.nightCutoffHour}:00.`);
+// Runs both sweeps. Safe to call repeatedly/externally — each sweep is idempotent
+// within its own cooldown window. This is what a keep-alive-free external scheduler
+// (e.g. cron-job.com hitting POST /api/jobs/trigger) should call every ~15 minutes,
+// since a free Render instance can go to sleep and silently stop firing in-process cron.
+async function runAllSweeps() {
+  await run8HourSweep();
+  await runNightSweep();
 }
 
-module.exports = { start, run8HourSweep, runNightSweep };
+function start() {
+  // In-process schedule: a nice-to-have while the instance happens to be awake.
+  // Not relied upon alone — see runAllSweeps()/the /api/jobs/trigger endpoint.
+  cron.schedule('*/15 * * * *', () => {
+    runAllSweeps().catch((err) => console.error('[jobs] sweep failed:', err));
+  });
+
+  console.log('[jobs] Reminder sweeps scheduled every 15 min (in-process) and available via POST /api/jobs/trigger for external scheduling.');
+}
+
+module.exports = { start, run8HourSweep, runNightSweep, runAllSweeps };
