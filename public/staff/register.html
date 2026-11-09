@@ -77,9 +77,15 @@
         body: JSON.stringify({ name, category, phone }),
       });
       Store.save(result);
-      setupPush(result.staffId);
-      statusBox.innerHTML = '<div class="status ok">Registered! Redirecting…</div>';
-      setTimeout(redirectAfterRegister, 600);
+      const pushResult = await setupPush(result.staffId);
+
+      const pushLine = pushResult.ok
+        ? 'Push notifications enabled.'
+        : `Push notifications not enabled: ${pushResult.reason}`;
+      statusBox.innerHTML = `
+        <div class="status ok">Registered! Redirecting…</div>
+        <p class="muted" style="margin-top:8px">${pushLine}</p>`;
+      setTimeout(redirectAfterRegister, pushResult.ok ? 600 : 2500);
     } catch (err) {
       statusBox.innerHTML = `<div class="status err">${err.message}</div>`;
     }

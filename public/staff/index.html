@@ -30,8 +30,6 @@
       return;
     }
 
-    setupPush(Store.staffId);
-
     try {
       const info = await api(`/staff/${Store.staffId}`);
       const badge = info.isCheckedIn ? 'in' : 'out';
@@ -39,6 +37,8 @@
       const lastEvent = info.lastEvent
         ? `Last event: ${info.lastEvent.type} at ${new Date(info.lastEvent.timestamp).toLocaleString()}`
         : 'No gate scans yet.';
+      const pushState = ('Notification' in window) ? Notification.permission : 'unsupported';
+      const pushLabel = pushState === 'granted' ? 'Push notifications are on.' : 'Push notifications are off.';
 
       card.innerHTML = `
         <h1>Hi, ${info.name}</h1>
@@ -48,7 +48,22 @@
           <div style="margin-top:8px; font-weight:400; font-size:0.85rem">${lastEvent}</div>
         </div>
         <p class="muted" style="margin-top:16px">Scan the QR code at the gate to check in or out.</p>
+        <p class="muted" id="pushLabel" style="margin-top:16px">${pushLabel}</p>
+        <button id="enablePushBtn">Enable push notifications</button>
         <button class="secondary" onclick="window.location.href='/staff/register.html'">Register a different person on this phone</button>`;
+
+      // Must be requested from inside a real tap — iOS Safari ignores permission
+      // requests that aren't triggered directly by a user gesture like this click.
+      document.getElementById('enablePushBtn').addEventListener('click', async () => {
+        const btn = document.getElementById('enablePushBtn');
+        const label = document.getElementById('pushLabel');
+        btn.disabled = true;
+        btn.textContent = 'Enabling…';
+        const result = await setupPush(Store.staffId);
+        label.textContent = result.ok ? 'Push notifications are on.' : `Could not enable push: ${result.reason}`;
+        btn.disabled = false;
+        btn.textContent = 'Enable push notifications';
+      });
     } catch (err) {
       card.innerHTML = `<div class="status err">${err.message}</div>`;
     }
