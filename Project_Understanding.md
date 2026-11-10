@@ -54,12 +54,15 @@ Two tabs, auto-created on first run by `sheets.ensureSheetsExist()` if missing.
 |---|---|---|---|---|---|---|---|---|---|---|
 | UUID | FK → Staff | denormalized for easy reading in the Sheet | `CheckIn` / `CheckOut` | ISO timestamp | scan's GPS | scan's GPS | distance from gate at scan time | `main` | see below |
 
-`Note` is a small reused flag field, overloaded for two unrelated purposes (by design, to avoid
+`Note` is a small reused flag field, overloaded for three unrelated purposes (by design, to avoid
 adding more Sheet columns for a low-volume use case):
 - An **ISO timestamp** → "don't send another 8-hour reminder until this time" (set after a
   reminder is sent, or after the staff member taps "still on duty").
 - The literal string **`NIGHT:<YYYY-MM-DD>`** → "the night-cutoff reminder was already sent today",
   so repeated external-scheduler pings during the cutoff hour don't spam the same person.
+- The literal string **`AdminForced`** → this row was created by the admin dashboard's force
+  check-in/check-out override, not a real gate scan (shown as "(admin override)" in the dashboard's
+  log table). Forced rows have blank `Lat`/`Lng`/`DistanceMeters` since no real scan happened.
 
 There is **no "current status" column** — whether someone is checked in is always derived by
 finding their most recent `AttendanceLog` row and checking if `Type === 'CheckIn'`. This is the
@@ -74,8 +77,11 @@ Boots the Express app:
 2. Exposes `GET /api/public-config` — the *non-secret* Firebase web config (apiKey, projectId,
    etc.) and the gate id, which the browser needs client-side but which aren't sensitive the way
    the service-account keys are.
-3. Serves the two static frontends: `/staff/*` → `public/staff/`, `/admin/*` → `public/admin/`.
-4. On startup: calls `sheets.ensureSheetsExist()` (creates the Sheet tabs/headers if missing) and
+3. Dynamically generates and serves `GET /staff/firebase-messaging-sw.js` (see §5 for why this
+   isn't just a static file), registered *before* the static middleware below so it takes
+   precedence over anything of the same name on disk.
+4. Serves the two static frontends: `/staff/*` → `public/staff/`, `/admin/*` → `public/admin/`.
+5. On startup: calls `sheets.ensureSheetsExist()` (creates the Sheet tabs/headers if missing) and
    `reminders.start()` (arms the in-process cron), then starts listening.
 
 ### 4.2 `src/config.js`
@@ -142,6 +148,12 @@ distance in meters. Used to check a scan is within `GATE_RADIUS_M` of the config
   current status, last event, how many hours their session has been open, and an `overdue` flag
   (open 8+ hours, or it's past the night-cutoff hour).
 - `GET /logs?date=&category=`: the raw log, newest first, optionally filtered.
+- `POST /:staffId/force-checkin` / `POST /:staffId/force-checkout`: admin override for a missed
+  scan (e.g. someone forgot to tap out). Shares one internal `forceLog()` helper with the real
+  `/api/attendance/scan` state-machine rule — force-checkout still only succeeds if there's an open
+  check-in, force-checkin still only succeeds if there isn't one already — but skips the geofence
+  check entirely (admin is trusted, not assumed to be at the gate) and writes blank `Lat`/`Lng`/
+  `DistanceMeters` with `Note = 'AdminForced'` so these rows are distinguishable from real scans.
 
 **`jobs.js`** — machine-to-machine, gated by a shared secret (`x-jobs-secret` header vs
 `config.jobsSecret`), *not* the admin password (this is meant to be called by an external
@@ -189,7 +201,9 @@ screen via `manifest.json`.
     permission (as the very first step, to stay inside the user-gesture window Safari requires),
     then registers the service worker, initializes Firebase, fetches an FCM token, and saves it via
     `POST /api/staff/:id/fcm-token`. Returns `{ ok, reason }` instead of throwing, so callers can
-    show *why* it failed (critical on iOS, which fails this silently and inconsistently).
+    show *why* it failed. Even with this (and the service worker fix in §5 below), **push delivery
+    is confirmed working on Android but still not arriving on iOS** despite every client-side step
+    reporting success — see the iOS note in §8.
 
 - **`register.html`** — name + role dropdown (role options fetched from
   `GET /api/staff/categories`, never hardcoded in two places) + optional phone. On submit: calls
@@ -208,11 +222,16 @@ screen via `manifest.json`.
 
 - **`manifest.json` / `icon.svg`** — PWA installability metadata ("Add to Home Screen").
 
-- **`firebase-messaging-sw.js`** — the service worker. Handles two jobs: (1) standard PWA
-  installability/offline-capability plumbing, and (2) receiving FCM push messages while the app is
-  backgrounded/closed, via `firebase.messaging().onBackgroundMessage`, and showing them as a system
-  notification. It's initialized with the Firebase config via `postMessage` from `app.js` rather
-  than hardcoding it, so no Firebase keys are baked into the cached service worker file.
+- **`firebase-messaging-sw.js`** — the service worker, but **not actually a static file**: it's
+  generated and served by `server/src/index.js` (see §4.1), with the Firebase web config embedded
+  directly at the top of the script via `firebase.initializeApp(...)`. This replaced an earlier
+  version that initialized Firebase only when it received a `postMessage` from an open page — which
+  broke in practice, because browsers can terminate and restart a service worker at any time with no
+  page around to resend that message, silently leaving it unable to handle a real incoming push.
+  Embedding the config (safe — it's the same public values `/api/public-config` already exposes, not
+  a secret) makes the worker self-sufficient from the moment it starts, regardless of restarts.
+  Besides Firebase init, it handles standard PWA installability plumbing and shows incoming
+  background pushes as a system notification via `onBackgroundMessage`.
 
 - **`styles.css`** — shared dark-mode-first mobile styling for all staff pages.
 
@@ -224,7 +243,11 @@ screen via `manifest.json`.
   and sends it as the `x-admin-password` header on every `/api/dashboard/*` call; auto-logs-in on
   reload if a password is already stored and still valid. Renders the roster (`loadRoster()`) and
   the filterable log (`loadLogs()`, reacting to the date/category filter inputs) as plain HTML
-  tables built from the API responses.
+  tables built from the API responses. Each roster row gets one override button — **"Force
+  check-in"** or **"Force check-out"**, whichever is currently valid for that person — gated behind
+  a native `confirm()` prompt before calling `POST /api/dashboard/:staffId/force-checkin` or
+  `force-checkout`, then refreshes both tables. Forced log rows render with a visible
+  "(admin override)" tag.
 - **`styles.css`** — shared styling, matching the staff app's visual language.
 
 ## 7. End-to-end flow walkthroughs
@@ -253,6 +276,12 @@ Open `/admin/` → enter password → `admin.js` calls `GET /api/dashboard/today
 `dashboard.js` joins `getAllStaff()` + `getAllLogs()` in memory → returns one row per staff member
 with derived status/overdue flags → rendered as a table.
 
+**Admin correcting a missed scan:**
+Admin taps "Force check-out" (or check-in) on a roster row → confirm prompt → `admin.js` calls
+`POST /api/dashboard/:staffId/force-checkout` → `dashboard.js`'s `forceLog()` re-checks the same
+open/closed-session precondition a real scan would, skips the geofence check, and appends a log row
+with `Note = 'AdminForced'` → roster/log tables reload and reflect the corrected status immediately.
+
 ## 8. Operational notes worth knowing
 
 - **No database beyond the Google Sheet.** Every read hits (cached) Sheets API calls; this is
@@ -267,3 +296,15 @@ with derived status/overdue flags → rendered as a table.
   start) — this bit us once with `ADMIN_PASSWORD` during setup.
 - **Render's Secret Files use a bare filename**, not a path — Render mounts them under
   `/etc/secrets/<filename>` itself.
+- **iOS Safari push notifications are still not arriving, as of the last test**, despite every
+  step reporting success: Home Screen install done, OS-level "Allow Notifications" confirmed on,
+  web notification permission granted, a token saved, and the server/Firebase Admin SDK confirming
+  each send accepted. The same flow was cross-checked on **Android, where a push was confirmed
+  received** — which points at an iOS/Safari-specific gap (Apple's web push relay vs. Firebase's
+  bridging to it) rather than anything wrong in this app's server or client code. The admin force
+  check-in/check-out override (§4.6, §6) exists partly as a practical workaround for this — staff
+  can call the society/office to have an admin fix a missed scan instead of relying on a reminder
+  push reaching them.
+- **`POST /api/jobs/test-push`** (see §4.6) was built specifically to debug the above — it isolates
+  "did the server/Firebase side succeed" from "did the device actually show it," which is what let
+  us narrow the iOS issue down to delivery rather than configuration.
