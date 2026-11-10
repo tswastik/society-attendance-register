@@ -2,9 +2,11 @@ function getPassword() {
   return sessionStorage.getItem('adminPassword') || '';
 }
 
-async function adminApi(path) {
+async function adminApi(path, options = {}) {
   const res = await fetch(`/api/dashboard${path}`, {
-    headers: { 'x-admin-password': getPassword() },
+    method: options.method || 'GET',
+    headers: { 'x-admin-password': getPassword(), 'Content-Type': 'application/json' },
+    body: options.body,
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
@@ -35,20 +37,46 @@ async function loadRoster() {
         ? `<span class="badge in">IN</span>`
         : `<span class="badge out">OUT</span>`;
       const overdue = r.overdue ? `<span class="badge overdue">OVERDUE</span>` : '';
+      const forceBtn = r.isCheckedIn
+        ? `<button class="secondary force-btn" data-staff="${r.staffId}" data-type="force-checkout">Force check-out</button>`
+        : `<button class="secondary force-btn" data-staff="${r.staffId}" data-type="force-checkin">Force check-in</button>`;
       return `<tr>
         <td>${r.name}</td>
         <td>${r.category}</td>
         <td>${statusBadge} ${overdue}</td>
         <td>${r.lastEventType || '—'}<br><span class="muted">${fmtTime(r.lastEventTime)}</span></td>
         <td>${r.hoursOpen !== null ? r.hoursOpen + 'h' : '—'}</td>
+        <td>${forceBtn}</td>
       </tr>`;
     }).join('');
 
     box.innerHTML = `
-      <table>
-        <thead><tr><th>Name</th><th>Role</th><th>Status</th><th>Last event</th><th>Open for</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>`;
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Name</th><th>Role</th><th>Status</th><th>Last event</th><th>Open for</th><th>Override</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+
+    box.querySelectorAll('.force-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const staffId = btn.dataset.staff;
+        const type = btn.dataset.type; // "force-checkin" or "force-checkout"
+        const label = type === 'force-checkin' ? 'check this person IN' : 'check this person OUT';
+        if (!confirm(`Force ${label}? This skips the gate location check.`)) return;
+
+        btn.disabled = true;
+        try {
+          const result = await adminApi(`/${staffId}/${type}`, { method: 'POST' });
+          alert(result.message);
+          loadRoster();
+          loadLogs();
+        } catch (err) {
+          alert(err.message);
+          btn.disabled = false;
+        }
+      });
+    });
   } catch (err) {
     box.innerHTML = `<p class="err">${err.message}</p>`;
   }
@@ -70,19 +98,25 @@ async function loadLogs() {
       return;
     }
 
-    const rows = logs.map((l) => `<tr>
-      <td>${l.Name}</td>
-      <td>${l.Category}</td>
-      <td>${l.Type}</td>
-      <td>${fmtTime(l.Timestamp)}</td>
-      <td>${l.DistanceMeters}m</td>
-    </tr>`).join('');
+    const rows = logs.map((l) => {
+      const distance = l.DistanceMeters !== '' ? `${l.DistanceMeters}m` : '—';
+      const forced = l.Note === 'AdminForced' ? ' <span class="muted">(admin override)</span>' : '';
+      return `<tr>
+        <td>${l.Name}</td>
+        <td>${l.Category}</td>
+        <td>${l.Type}${forced}</td>
+        <td>${fmtTime(l.Timestamp)}</td>
+        <td>${distance}</td>
+      </tr>`;
+    }).join('');
 
     box.innerHTML = `
-      <table>
-        <thead><tr><th>Name</th><th>Role</th><th>Type</th><th>Time</th><th>Distance</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>`;
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Name</th><th>Role</th><th>Type</th><th>Time</th><th>Distance</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
   } catch (err) {
     box.innerHTML = `<p class="err">${err.message}</p>`;
   }

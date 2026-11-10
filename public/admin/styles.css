@@ -46,9 +46,14 @@ button {
   cursor: pointer;
 }
 
+.table-scroll { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #334155; }
+th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #334155; white-space: nowrap; }
 th { color: var(--muted); font-weight: 600; }
+
+button.secondary { background: #334155; color: var(--text); }
+button.force-btn { font-size: 0.78rem; padding: 6px 10px; }
+button:disabled { opacity: 0.6; cursor: default; }
 
 .badge { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 0.72rem; font-weight: 600; }
 .badge.in { background: rgba(34,197,94,0.2); color: var(--accent); }
